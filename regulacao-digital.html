@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NetBalance — Regulação Digital</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif;
+    overflow: hidden;
+    width: 100vw;
+    height: 100vh;
+    color: #fff;
+  }
+  canvas { display: block; }
+
+  #ui-overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  /* ── HUD ── */
+  #hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 18px 24px 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    transition: opacity .3s;
+  }
+
+  .hud-pill {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 100px;
+    backdrop-filter: blur(20px) saturate(1.8);
+    -webkit-backdrop-filter: blur(20px) saturate(1.8);
+    padding: 8px 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: -.2px;
+    white-space: nowrap;
+  }
+  .hud-pill span.label { color: rgba(255,255,255,.5); font-size: 11px; font-weight: 400; }
+  .hud-pill span.val { font-size: 16px; font-weight: 700; }
+
+  #balance-bar-wrap {
+    flex: 1;
+    max-width: 360px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 100px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 10px 18px;
+  }
+  #balance-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    color: rgba(255,255,255,.4);
+    margin-bottom: 6px;
+  }
+  #balance-track {
+    height: 6px;
+    border-radius: 100px;
+    background: rgba(255,255,255,.1);
+    overflow: hidden;
+    position: relative;
+  }
+  #balance-fill {
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 0;
+    border-radius: 100px;
+    width: 50%;
+    background: linear-gradient(90deg, #30d158, #ffd60a, #ff453a);
+    background-size: 200% 100%;
+    transition: background-position .4s ease, width .4s ease;
+  }
+  #balance-cursor {
+    position: absolute;
+    top: -3px;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 8px rgba(255,255,255,.8);
+    transform: translateX(-50%);
+    transition: left .4s ease;
+    left: 50%;
+  }
+
+  /* ── CARD ── */
+  #card-wrap {
+    position: absolute;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 340px;
+    pointer-events: all;
+    transition: opacity .3s, transform .3s;
+  }
+  #card-wrap.hidden { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(20px); }
+
+  #card {
+    background: rgba(28,28,30,0.85);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-radius: 24px;
+    backdrop-filter: blur(40px) saturate(2);
+    -webkit-backdrop-filter: blur(40px) saturate(2);
+    padding: 20px;
+    box-shadow: 0 24px 64px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.05) inset;
+    animation: cardIn .35s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes cardIn {
+    from { opacity: 0; transform: scale(.88) translateY(16px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  #card-icon {
+    font-size: 36px;
+    margin-bottom: 10px;
+    display: block;
+  }
+  #card-title {
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -.3px;
+    margin-bottom: 4px;
+  }
+  #card-desc {
+    font-size: 13px;
+    color: rgba(255,255,255,.55);
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+  #card-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .8px;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 100px;
+    margin-bottom: 14px;
+  }
+  .tag-danger { background: rgba(255,69,58,.2); color: #ff6961; }
+  .tag-warn { background: rgba(255,214,10,.2); color: #ffd60a; }
+  .tag-info { background: rgba(10,132,255,.2); color: #64d2ff; }
+  .tag-good { background: rgba(48,209,88,.2); color: #30d158; }
+
+  #card-btns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .card-btn {
+    padding: 13px;
+    border-radius: 14px;
+    border: none;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform .12s, opacity .12s;
+    letter-spacing: -.1px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .card-btn:hover { transform: scale(1.03); }
+  .card-btn:active { transform: scale(.97); opacity: .8; }
+  .card-btn .btn-icon { font-size: 20px; }
+  .card-btn .btn-hint { font-size: 10px; font-weight: 400; opacity: .7; }
+
+  #btn-regulate {
+    background: rgba(10,132,255,.25);
+    border: 1px solid rgba(10,132,255,.4);
+    color: #64d2ff;
+  }
+  #btn-free {
+    background: rgba(255,69,58,.2);
+    border: 1px solid rgba(255,69,58,.35);
+    color: #ff6961;
+  }
+
+  /* ── FEEDBACK TOAST ── */
+  #toast {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(.8);
+    background: rgba(28,28,30,.95);
+    border: 1px solid rgba(255,255,255,.2);
+    border-radius: 20px;
+    backdrop-filter: blur(30px);
+    padding: 20px 28px;
+    text-align: center;
+    max-width: 300px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s, transform .2s;
+    z-index: 20;
+  }
+  #toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #toast-icon { font-size: 40px; display: block; margin-bottom: 8px; }
+  #toast-title { font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+  #toast-msg { font-size: 13px; color: rgba(255,255,255,.6); line-height: 1.4; }
+
+  /* ── TIMER ARC ── */
+  #timer-wrap {
+    position: absolute;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+  #timer-wrap svg { display: block; }
+
+  /* ── SCORE / ROUND ── */
+  #score-badge {
+    position: absolute;
+    top: 78px;
+    right: 24px;
+    background: rgba(255,255,255,.08);
+    border: 1px solid rgba(255,255,255,.14);
+    border-radius: 100px;
+    backdrop-filter: blur(20px);
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .3px;
+    color: rgba(255,255,255,.6);
+  }
+
+  /* ── SCREENS ── */
+  .screen {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    text-align: center;
+    padding: 32px;
+    transition: opacity .4s;
+  }
+  .screen.hidden { opacity: 0; pointer-events: none; }
+
+  #screen-intro {
+    background: radial-gradient(ellipse at 50% 30%, rgba(10,132,255,.15) 0%, transparent 60%),
+                radial-gradient(ellipse at 80% 80%, rgba(48,209,88,.1) 0%, transparent 50%),
+                #000;
+  }
+  .intro-logo {
+    font-size: 56px;
+    font-weight: 800;
+    letter-spacing: -2px;
+    background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,.5) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+  }
+  .intro-sub {
+    font-size: 16px;
+    color: rgba(255,255,255,.45);
+    font-weight: 400;
+    letter-spacing: -.2px;
+    margin-bottom: 48px;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+  .intro-badges {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 40px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .intro-badge {
+    background: rgba(255,255,255,.07);
+    border: 1px solid rgba(255,255,255,.12);
+    border-radius: 100px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    color: rgba(255,255,255,.7);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .start-btn {
+    background: #fff;
+    color: #000;
+    border: none;
+    border-radius: 100px;
+    padding: 16px 48px;
+    font-size: 17px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    letter-spacing: -.3px;
+    transition: transform .12s, box-shadow .12s;
+    box-shadow: 0 8px 32px rgba(255,255,255,.2);
+  }
+  .start-btn:hover { transform: scale(1.04); box-shadow: 0 12px 40px rgba(255,255,255,.3); }
+  .start-btn:active { transform: scale(.97); }
+
+  #screen-end {
+    background: radial-gradient(ellipse at 50% 40%, rgba(255,214,10,.12) 0%, transparent 55%), #000;
+  }
+  .end-trophy { font-size: 72px; margin-bottom: 16px; }
+  .end-title { font-size: 34px; font-weight: 800; letter-spacing: -1.5px; margin-bottom: 8px; }
+  .end-sub { font-size: 15px; color: rgba(255,255,255,.5); margin-bottom: 32px; max-width: 280px; line-height: 1.5; }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    width: 100%;
+    max-width: 320px;
+    margin-bottom: 32px;
+  }
+  .stat-card {
+    background: rgba(255,255,255,.06);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 16px;
+    padding: 16px;
+    text-align: left;
+  }
+  .stat-label { font-size: 11px; font-weight: 500; color: rgba(255,255,255,.4); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 4px; }
+  .stat-val { font-size: 28px; font-weight: 700; letter-spacing: -1px; }
+
+  .lesson-wrap {
+    background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 20px;
+    padding: 20px;
+    max-width: 360px;
+    margin-bottom: 24px;
+    text-align: left;
+  }
+  .lesson-title { font-size: 13px; font-weight: 600; color: rgba(255,255,255,.4); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 12px; }
+  .lesson-item { display: flex; gap: 10px; margin-bottom: 10px; align-items: flex-start; }
+  .lesson-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+  .lesson-text { font-size: 13px; color: rgba(255,255,255,.65); line-height: 1.5; }
+
+  /* ── COMBO ── */
+  #combo-wrap {
+    position: absolute;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  #combo-wrap.show { opacity: 1; }
+  .combo-text {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    text-shadow: 0 0 20px rgba(255,214,10,.6);
+    color: #ffd60a;
+    animation: comboPop .4s cubic-bezier(.34,1.56,.64,1);
+  }
+  @keyframes comboPop {
+    from { transform: scale(.5); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  /* ── PARTICLE ── */
+  .particle {
+    position: fixed;
+    pointer-events: none;
+    border-radius: 50%;
+    animation: particleFly .8s ease-out forwards;
+    z-index: 100;
+  }
+  @keyframes particleFly {
+    from { opacity: 1; transform: translate(0,0) scale(1); }
+    to { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0); }
+  }
+</style>
+</head>
+<body>
+
+<!-- THREE.JS -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<canvas id="c"></canvas>
+
+<!-- ───── INTRO SCREEN ───── -->
+<div class="screen" id="screen-intro">
+  <div class="intro-logo">NetBalance</div>
+  <p class="intro-sub">Você controla a internet. Cada decisão tem consequências. Você consegue manter o equilíbrio?</p>
+  <div class="intro-badges">
+    <span class="intro-badge">⚡ 90 segundos</span>
+    <span class="intro-badge">🎯 10 decisões</span>
+    <span class="intro-badge">⚖️ Regulação Digital</span>
+  </div>
+  <button class="start-btn" onclick="startGame()">Jogar Agora</button>
+</div>
+
+<!-- ───── END SCREEN ───── -->
+<div class="screen hidden" id="screen-end">
+  <div class="end-trophy" id="end-trophy">🏆</div>
+  <div class="end-title" id="end-title">Parabéns!</div>
+  <p class="end-sub" id="end-sub">Você manteve o equilíbrio digital.</p>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Pontuação</div>
+      <div class="stat-val" id="end-score">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Equilíbrio</div>
+      <div class="stat-val" id="end-balance">50%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Regulações</div>
+      <div class="stat-val" id="end-reg">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Liberações</div>
+      <div class="stat-val" id="end-free">0</div>
+    </div>
+  </div>
+
+  <div class="lesson-wrap">
+    <div class="lesson-title">💡 O que aprendemos</div>
+    <div class="lesson-item">
+      <div class="lesson-dot" style="background:#30d158"></div>
+      <div class="lesson-text">Regulação protege usuários de discurso de ódio, desinformação e exploração.</div>
+    </div>
+    <div class="lesson-item">
+      <div class="lesson-dot" style="background:#ffd60a"></div>
+      <div class="lesson-text">Excesso de controle pode calar vozes legítimas e travar a inovação.</div>
+    </div>
+    <div class="lesson-item">
+      <div class="lesson-dot" style="background:#ff6961"></div>
+      <div class="lesson-text">O equilíbrio entre liberdade e proteção é o maior desafio da era digital.</div>
+    </div>
+  </div>
+
+  <button class="start-btn" onclick="restartGame()">Jogar Novamente</button>
+</div>
+
+<!-- ───── HUD ───── -->
+<div id="ui-overlay">
+  <div id="hud">
+    <div class="hud-pill">
+      <span class="label">PONTOS</span>
+      <span class="val" id="hud-score">0</span>
+    </div>
+
+    <div id="balance-bar-wrap">
+      <div id="balance-label">
+        <span>🔓 Livre</span>
+        <span>⚖️ Equilíbrio</span>
+        <span>🛡️ Regulado</span>
+      </div>
+      <div id="balance-track">
+        <div id="balance-fill"></div>
+        <div id="balance-cursor"></div>
+      </div>
+    </div>
+
+    <div class="hud-pill">
+      <span class="label">RODADA</span>
+      <span class="val" id="hud-round">1/10</span>
+    </div>
+  </div>
+
+  <div id="score-badge" id="score-badge">⏱ 90s</div>
+
+  <!-- COMBO -->
+  <div id="combo-wrap">
+    <div class="combo-text" id="combo-text">COMBO ×2</div>
+  </div>
+
+  <!-- CARD -->
+  <div id="card-wrap" class="hidden">
+    <div id="card">
+      <span id="card-icon">📱</span>
+      <span id="card-tag" class="tag-warn">CONTEÚDO</span>
+      <div id="card-title">Título do cenário</div>
+      <div id="card-desc">Descrição do que está acontecendo na plataforma.</div>
+      <div id="card-btns">
+        <button class="card-btn" id="btn-regulate" onclick="decide('regulate')">
+          <span class="btn-icon">🛡️</span>
+          Regulamentar
+          <span class="btn-hint">Criar regra</span>
+        </button>
+        <button class="card-btn" id="btn-free" onclick="decide('free')">
+          <span class="btn-icon">🔓</span>
+          Liberar
+          <span class="btn-hint">Deixar rolar</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST FEEDBACK -->
+  <div id="toast">
+    <span id="toast-icon">✅</span>
+    <div id="toast-title"></div>
+    <div id="toast-msg"></div>
+  </div>
+
+  <!-- TIMER -->
+  <div id="timer-wrap">
+    <svg width="64" height="64" viewBox="0 0 64 64">
+      <circle cx="32" cy="32" r="26" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="4"/>
+      <circle id="timer-arc" cx="32" cy="32" r="26" fill="none" stroke="#fff" stroke-width="4"
+        stroke-dasharray="163.4" stroke-dashoffset="0"
+        stroke-linecap="round" transform="rotate(-90 32 32)"
+        style="transition: stroke-dashoffset .1s linear, stroke .3s"/>
+      <text x="32" y="37" text-anchor="middle" fill="white" font-size="14" font-weight="700"
+        font-family="-apple-system,sans-serif" id="timer-txt">90</text>
+    </svg>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  GAME DATA
+// ═══════════════════════════════════════════════════════
+const SCENARIOS = [
+  {
+    icon: '😡',
+    title: 'Onda de Discurso de Ódio',
+    desc: 'Grupos extremistas espalhando mensagens agressivas contra minorias em larga escala.',
+    tag: 'danger', tagLabel: 'URGENTE',
+    regulate: { score: 120, balanceDelta: +15, icon: '✅', title: 'Bem feito!', msg: 'Discurso de ódio removido. Comunidade mais segura.' },
+    free: { score: 20, balanceDelta: -20, icon: '⚠️', title: 'Consequência grave', msg: 'Ataques se espalharam. Usuários vulneráveis foram prejudicados.' }
+  },
+  {
+    icon: '🎨',
+    title: 'Arte Controversa',
+    desc: 'Artistas publicando obras provocativas. Alguns pedem remoção, outros defendem a liberdade criativa.',
+    tag: 'warn', tagLabel: 'DILEMA',
+    regulate: { score: 40, balanceDelta: -12, icon: '🤔', title: 'Hmm...', msg: 'Arte censurada. Artistas perdem espaço de expressão.' },
+    free: { score: 100, balanceDelta: +8, icon: '🎭', title: 'Liberdade criativa!', msg: 'Debate saudável. Diversidade de expressão protegida.' }
+  },
+  {
+    icon: '💊',
+    title: 'Anúncios de Curas Falsas',
+    desc: 'Perfis vendendo "curas milagrosas" sem evidência científica para doenças graves.',
+    tag: 'danger', tagLabel: 'SAÚDE',
+    regulate: { score: 130, balanceDelta: +18, icon: '🏥', title: 'Proteção à saúde!', msg: 'Desinformação bloqueada. Vidas possivelmente salvas.' },
+    free: { score: 10, balanceDelta: -25, icon: '💀', title: 'Perigoso!', msg: 'Pessoas abandonaram tratamentos médicos reais. Dano grave.' }
+  },
+  {
+    icon: '📰',
+    title: 'Notícia Crítica ao Governo',
+    desc: 'Jornalistas publicando investigações sobre corrupção. Governantes pedem remoção.',
+    tag: 'info', tagLabel: 'DEMOCRACIA',
+    regulate: { score: 15, balanceDelta: -30, icon: '😱', title: 'Censura!', msg: 'Imprensa silenciada. Democracia enfraquecida.' },
+    free: { score: 140, balanceDelta: +20, icon: '📢', title: 'Transparência!', msg: 'Jornalismo protegido. Democracia fortalecida.' }
+  },
+  {
+    icon: '🔞',
+    title: 'Conteúdo Adulto para Menores',
+    desc: 'Algoritmo direcionando conteúdo adulto para usuários com menos de 16 anos.',
+    tag: 'danger', tagLabel: 'PROTEÇÃO',
+    regulate: { score: 150, balanceDelta: +20, icon: '👶', title: 'Crianças protegidas!', msg: 'Verificação de idade implementada. Jovens protegidos.' },
+    free: { score: 0, balanceDelta: -30, icon: '🚨', title: 'Sério problema!', msg: 'Menores expostos a conteúdo inadequado. Reguladores acionados.' }
+  },
+  {
+    icon: '🤖',
+    title: 'Algoritmo Viciante',
+    desc: 'IA da plataforma prende usuários por horas. Produtividade cai, mas engajamento explode.',
+    tag: 'warn', tagLabel: 'TECNOLOGIA',
+    regulate: { score: 90, balanceDelta: +10, icon: '⏰', title: 'Saúde digital!', msg: 'Limites impostos. Bem-estar dos usuários melhorou.' },
+    free: { score: 60, balanceDelta: -8, icon: '📱', title: 'Dopamina digital', msg: 'Mais engajamento, mais receita. Mas usuários cada vez mais viciados.' }
+  },
+  {
+    icon: '🌍',
+    title: 'Desinformação Climática',
+    desc: 'Vídeos negando mudanças climáticas viralizando e espalhando confusão científica.',
+    tag: 'warn', tagLabel: 'CIÊNCIA',
+    regulate: { score: 110, balanceDelta: +12, icon: '🌱', title: 'Ciência protegida!', msg: 'Conteúdo rotulado como desinformação. Usuários informados.' },
+    free: { score: 30, balanceDelta: -15, icon: '🌡️', title: 'Confusão cresce', msg: 'Desinformação dominou o debate público sobre clima.' }
+  },
+  {
+    icon: '🗳️',
+    title: 'Campanha Eleitoral Falsa',
+    desc: 'Perfis falsos espalhando mentiras sobre candidatos dias antes das eleições.',
+    tag: 'danger', tagLabel: 'ELEIÇÕES',
+    regulate: { score: 140, balanceDelta: +18, icon: '🗳️', title: 'Democracia salva!', msg: 'Bots removidos. Eleição mais justa.' },
+    free: { score: 20, balanceDelta: -22, icon: '🤥', title: 'Manipulação!', msg: 'Desinformação alterou percepção de eleitores. Democracia ameaçada.' }
+  },
+  {
+    icon: '💬',
+    title: 'Meme Político Satírico',
+    desc: 'Página de humor com memes críticos a políticos. Governo pede bloqueio imediato.',
+    tag: 'info', tagLabel: 'HUMOR',
+    regulate: { score: 20, balanceDelta: -18, icon: '🚫', title: 'Humor censurado', msg: 'Sátira política é expressão fundamental em democracias.' },
+    free: { score: 120, balanceDelta: +15, icon: '😂', title: 'Liberdade de expressão!', msg: 'Humor e crítica política são direitos fundamentais preservados.' }
+  },
+  {
+    icon: '🦠',
+    title: 'Desinformação em Pandemia',
+    desc: 'Grupos espalhando receitas caseiras perigosas como "cura" para doença respiratória.',
+    tag: 'danger', tagLabel: 'PANDEMIA',
+    regulate: { score: 150, balanceDelta: +22, icon: '💉', title: 'Saúde pública!', msg: 'Desinformação removida. Orientações médicas ganharam espaço.' },
+    free: { score: 5, balanceDelta: -28, icon: '🏥', title: 'Crise de saúde!', msg: 'Pessoas se auto-medicaram com produtos perigosos. Hospitalizações aumentaram.' }
+  }
+];
+
+// ═══════════════════════════════════════════════════════
+//  THREE.JS SCENE
+// ═══════════════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+scene.fog = new THREE.FogExp2(0x000000, 0.018);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 8, 22);
+camera.lookAt(0, 0, 0);
+
+// ── LIGHTS ──
+const ambient = new THREE.AmbientLight(0xffffff, 0.3);
+scene.add(ambient);
+
+const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+sun.position.set(10, 20, 10);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 0.1;
+sun.shadow.camera.far = 80;
+sun.shadow.camera.left = -30;
+sun.shadow.camera.right = 30;
+sun.shadow.camera.top = 30;
+sun.shadow.camera.bottom = -30;
+scene.add(sun);
+
+const blueRim = new THREE.DirectionalLight(0x0a84ff, 0.5);
+blueRim.position.set(-15, 5, -10);
+scene.add(blueRim);
+
+const greenRim = new THREE.DirectionalLight(0x30d158, 0.3);
+greenRim.position.set(15, 2, -10);
+scene.add(greenRim);
+
+// ── GROUND ──
+const groundGeo = new THREE.PlaneGeometry(100, 100, 32, 32);
+const groundMat = new THREE.MeshStandardMaterial({
+  color: 0x0a0a12,
+  roughness: 0.9,
+  metalness: 0.1
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// ── GRID LINES ──
+const gridHelper = new THREE.GridHelper(60, 30, 0x1a1a2e, 0x1a1a2e);
+gridHelper.position.y = 0.01;
+scene.add(gridHelper);
+
+// ── CITY BUILDINGS ──
+const buildingColors = [0x0a1628, 0x0d1f3c, 0x091220, 0x121a2e];
+const windowColors = [0x0a84ff, 0x30d158, 0xffd60a, 0xff453a, 0xbf5af2];
+
+function createBuilding(x, z, w, h, d) {
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const mat = new THREE.MeshStandardMaterial({
+    color: buildingColors[Math.floor(Math.random() * buildingColors.length)],
+    roughness: 0.8,
+    metalness: 0.3
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(x, h / 2, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+
+  // windows
+  for (let wy = 0; wy < Math.floor(h / 1.8); wy++) {
+    for (let wx = 0; wx < Math.floor(w / 1.6); wx++) {
+      if (Math.random() > 0.35) {
+        const wGeo = new THREE.BoxGeometry(0.4, 0.5, 0.05);
+        const wMat = new THREE.MeshStandardMaterial({
+          color: windowColors[Math.floor(Math.random() * windowColors.length)],
+          emissive: windowColors[Math.floor(Math.random() * windowColors.length)],
+          emissiveIntensity: Math.random() * 0.8 + 0.3,
+          roughness: 0.1
+        });
+        const win = new THREE.Mesh(wGeo, wMat);
+        win.position.set(
+          x + (wx - Math.floor(w / 1.6) / 2) * 1.2,
+          wy * 1.8 + 1.5,
+          z + d / 2 + 0.03
+        );
+        scene.add(win);
+      }
+    }
+  }
+}
+
+const buildingLayout = [
+  [-18, -15, 4, 14, 4], [-12, -18, 3, 10, 3], [-6, -20, 5, 18, 5],
+  [6, -20, 4, 12, 4], [12, -16, 3, 16, 3], [18, -18, 5, 8, 5],
+  [-22, -8, 3, 10, 3], [22, -10, 3, 14, 3],
+  [-20, 5, 4, 7, 4], [20, 8, 3, 9, 3],
+  [-16, 14, 3, 5, 3], [16, 12, 4, 6, 4],
+];
+buildingLayout.forEach(b => createBuilding(...b));
+
+// ── FLOATING ORBS (representing content nodes) ──
+const orbs = [];
+const orbColors = [0x0a84ff, 0x30d158, 0xffd60a, 0xff453a, 0xbf5af2, 0x64d2ff];
+for (let i = 0; i < 18; i++) {
+  const r = 0.15 + Math.random() * 0.25;
+  const geo = new THREE.SphereGeometry(r, 16, 16);
+  const color = orbColors[i % orbColors.length];
+  const mat = new THREE.MeshStandardMaterial({
+    color: color,
+    emissive: color,
+    emissiveIntensity: 0.6,
+    roughness: 0.2,
+    metalness: 0.5
+  });
+  const orb = new THREE.Mesh(geo, mat);
+  const angle = (i / 18) * Math.PI * 2;
+  const radius = 5 + Math.random() * 7;
+  orb.position.set(
+    Math.cos(angle) * radius,
+    1 + Math.random() * 5,
+    Math.sin(angle) * radius - 2
+  );
+  orb.userData = {
+    baseY: orb.position.y,
+    speed: 0.3 + Math.random() * 0.7,
+    phase: Math.random() * Math.PI * 2,
+    orbitR: radius,
+    orbitAngle: angle,
+    orbitSpeed: (0.1 + Math.random() * 0.2) * (Math.random() > 0.5 ? 1 : -1)
+  };
+  scene.add(orb);
+  orbs.push(orb);
+}
+
+// ── CENTRAL PLATFORM ──
+const platGeo = new THREE.CylinderGeometry(3.5, 4, 0.4, 32);
+const platMat = new THREE.MeshStandardMaterial({
+  color: 0x1a1a2e,
+  roughness: 0.4,
+  metalness: 0.8,
+  emissive: 0x0a84ff,
+  emissiveIntensity: 0.05
+});
+const platform = new THREE.Mesh(platGeo, platMat);
+platform.position.y = 0.2;
+platform.receiveShadow = true;
+platform.castShadow = true;
+scene.add(platform);
+
+// ── SCALE (balance symbol) ──
+const scaleGroup = new THREE.Group();
+scaleGroup.position.set(0, 0.4, 0);
+
+// pole
+const poleGeo = new THREE.CylinderGeometry(0.06, 0.06, 3, 8);
+const poleMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.3, metalness: 0.9 });
+const pole = new THREE.Mesh(poleGeo, poleMat);
+pole.position.y = 1.5;
+scaleGroup.add(pole);
+
+// beam
+const beamGeo = new THREE.BoxGeometry(3.5, 0.08, 0.08);
+const beam = new THREE.Mesh(beamGeo, poleMat);
+beam.position.y = 3;
+scaleGroup.add(beam);
+window.scaleBeam = beam;
+
+// left dish
+const dishGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.08, 16);
+const dishMatL = new THREE.MeshStandardMaterial({ color: 0x0a84ff, roughness: 0.3, metalness: 0.7, emissive: 0x0a84ff, emissiveIntensity: 0.3 });
+const dishL = new THREE.Mesh(dishGeo, dishMatL);
+dishL.position.set(-1.75, 2.6, 0);
+scaleGroup.add(dishL);
+window.dishLeft = dishL;
+
+const dishMatR = new THREE.MeshStandardMaterial({ color: 0xff453a, roughness: 0.3, metalness: 0.7, emissive: 0xff453a, emissiveIntensity: 0.3 });
+const dishR = new THREE.Mesh(dishGeo, dishMatR);
+dishR.position.set(1.75, 2.6, 0);
+scaleGroup.add(dishR);
+window.dishRight = dishR;
+
+// strings
+function makeLine(from, to) {
+  const dir = new THREE.Vector3().subVectors(to, from);
+  const len = dir.length();
+  const geo = new THREE.CylinderGeometry(0.02, 0.02, len, 4);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.5 });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.copy(from).lerp(to, 0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  return mesh;
+}
+scaleGroup.add(makeLine(new THREE.Vector3(-1.75, 3, 0), new THREE.Vector3(-1.75, 2.64, 0)));
+scaleGroup.add(makeLine(new THREE.Vector3(1.75, 3, 0), new THREE.Vector3(1.75, 2.64, 0)));
+scene.add(scaleGroup);
+window.scaleGroup = scaleGroup;
+
+// ── PARTICLE SYSTEM (data streams) ──
+const streamParticles = [];
+const streamGeo = new THREE.BufferGeometry();
+const streamPositions = new Float32Array(300 * 3);
+const streamColors = new Float32Array(300 * 3);
+for (let i = 0; i < 300; i++) {
+  streamParticles.push({
+    x: (Math.random() - 0.5) * 40,
+    y: Math.random() * 15,
+    z: (Math.random() - 0.5) * 40,
+    vy: -(0.02 + Math.random() * 0.06),
+    r: Math.random(), g: Math.random() * 0.5, b: 1.0
+  });
+}
+function updateStreamGeo() {
+  for (let i = 0; i < streamParticles.length; i++) {
+    const p = streamParticles[i];
+    p.y += p.vy;
+    if (p.y < 0) { p.y = 15; p.x = (Math.random() - 0.5) * 40; p.z = (Math.random() - 0.5) * 40; }
+    streamPositions[i * 3] = p.x;
+    streamPositions[i * 3 + 1] = p.y;
+    streamPositions[i * 3 + 2] = p.z;
+    streamColors[i * 3] = p.r; streamColors[i * 3 + 1] = p.g; streamColors[i * 3 + 2] = p.b;
+  }
+  streamGeo.attributes.position.needsUpdate = true;
+  streamGeo.attributes.color.needsUpdate = true;
+}
+streamGeo.setAttribute('position', new THREE.BufferAttribute(streamPositions, 3));
+streamGeo.setAttribute('color', new THREE.BufferAttribute(streamColors, 3));
+const streamMat = new THREE.PointsMaterial({ size: 0.08, vertexColors: true, transparent: true, opacity: 0.6 });
+scene.add(new THREE.Points(streamGeo, streamMat));
+
+// ═══════════════════════════════════════════════════════
+//  GAME STATE
+// ═══════════════════════════════════════════════════════
+let gameState = 'intro'; // intro | playing | end
+let score = 0;
+let balance = 50; // 0=free, 100=regulated
+let round = 0;
+let timeLeft = 90;
+let timerInterval = null;
+let currentScenario = null;
+let combo = 0;
+let lastGoodChoice = false;
+let regCount = 0;
+let freeCount = 0;
+let scenariosUsed = [];
+
+function shuffleScenarios() {
+  const arr = [...SCENARIOS];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr.slice(0, 10);
+}
+
+let scenarioQueue = [];
+
+function startGame() {
+  document.getElementById('screen-intro').classList.add('hidden');
+  gameState = 'playing';
+  score = 0;
+  balance = 50;
+  round = 0;
+  timeLeft = 90;
+  combo = 0;
+  regCount = 0;
+  freeCount = 0;
+  scenarioQueue = shuffleScenarios();
+
+  updateHUD();
+  nextRound();
+
+  timerInterval = setInterval(() => {
+    timeLeft--;
+    updateTimerArc();
+    document.getElementById('score-badge').textContent = `⏱ ${timeLeft}s`;
+    if (timeLeft <= 0) endGame();
+  }, 1000);
+}
+
+function restartGame() {
+  document.getElementById('screen-end').classList.add('hidden');
+  startGame();
+}
+
+function nextRound() {
+  if (round >= 10 || !scenarioQueue.length) { endGame(); return; }
+  currentScenario = scenarioQueue[round];
+  round++;
+  showCard(currentScenario);
+  updateHUD();
+  spawnScenarioOrb(currentScenario);
+}
+
+function decide(choice) {
+  if (gameState !== 'playing') return;
+  if (!currentScenario) return;
+
+  const result = choice === 'regulate' ? currentScenario.regulate : currentScenario.free;
+
+  // combo logic
+  const isGood = result.score >= 100;
+  if (isGood && lastGoodChoice) { combo++; } else { combo = Math.max(0, combo - 1); }
+  lastGoodChoice = isGood;
+
+  const multiplier = 1 + combo * 0.25;
+  const gained = Math.round(result.score * multiplier);
+  score += gained;
+  balance = Math.max(0, Math.min(100, balance + result.balanceDelta));
+
+  if (choice === 'regulate') regCount++; else freeCount++;
+
+  hideCard();
+  showToast(result.icon, result.title, result.msg + (combo > 1 ? ` 🔥 COMBO ×${combo}!` : ''));
+  showCombo(combo, multiplier);
+  spawnParticles(result.score > 80 ? '#30d158' : result.score > 50 ? '#ffd60a' : '#ff453a');
+  updateHUD();
+  updateBalance();
+  updateScale();
+
+  setTimeout(() => {
+    hideToast();
+    if (round < 10 && timeLeft > 0) nextRound();
+    else endGame();
+  }, 2000);
+}
+
+function endGame() {
+  clearInterval(timerInterval);
+  gameState = 'end';
+  hideCard();
+
+  let trophy, title, sub;
+  if (balance >= 40 && balance <= 65 && score > 700) {
+    trophy = '🏆'; title = 'Mestre do Equilíbrio!';
+    sub = 'Você navegou a regulação digital com sabedoria. A internet está em boas mãos.';
+  } else if (score > 800) {
+    trophy = '⭐'; title = 'Alta Pontuação!';
+    sub = 'Ótimas decisões, mas o equilíbrio entre liberdade e controle ainda pode melhorar.';
+  } else if (balance < 30) {
+    trophy = '🔓'; title = 'Internet Selvagem';
+    sub = 'Muita liberdade sem proteção. Usuários vulneráveis ficam desprotegidos.';
+  } else if (balance > 75) {
+    trophy = '🔒'; title = 'Controle Total';
+    sub = 'Regulação excessiva! Liberdade de expressão e inovação foram sufocadas.';
+  } else {
+    trophy = '👍'; title = 'Bom Trabalho!';
+    sub = 'Com mais prática você vai dominar o equilíbrio da regulação digital.';
+  }
+
+  document.getElementById('end-trophy').textContent = trophy;
+  document.getElementById('end-title').textContent = title;
+  document.getElementById('end-sub').textContent = sub;
+  document.getElementById('end-score').textContent = score;
+  document.getElementById('end-balance').textContent = `${Math.round(balance)}%`;
+  document.getElementById('end-reg').textContent = regCount;
+  document.getElementById('end-free').textContent = freeCount;
+
+  setTimeout(() => {
+    document.getElementById('screen-end').classList.remove('hidden');
+  }, 500);
+}
+
+// ═══════════════════════════════════════════════════════
+//  UI HELPERS
+// ═══════════════════════════════════════════════════════
+function updateHUD() {
+  document.getElementById('hud-score').textContent = score;
+  document.getElementById('hud-round').textContent = `${round}/10`;
+}
+
+function updateBalance() {
+  const fill = document.getElementById('balance-fill');
+  const cursor = document.getElementById('balance-cursor');
+  const pct = balance;
+  cursor.style.left = pct + '%';
+  fill.style.width = pct + '%';
+  const pos = (100 - pct) / 100;
+  fill.style.backgroundPosition = `${pos * 100}% 0`;
+}
+
+function updateScale() {
+  const tilt = ((balance - 50) / 50) * 0.4;
+  if (window.scaleBeam) window.scaleBeam.rotation.z = -tilt;
+  if (window.dishLeft) window.dishLeft.position.y = 2.6 + Math.sin(tilt) * 1.75;
+  if (window.dishRight) window.dishRight.position.y = 2.6 - Math.sin(tilt) * 1.75;
+}
+
+function showCard(scenario) {
+  const tagClasses = { danger: 'tag-danger', warn: 'tag-warn', info: 'tag-info', good: 'tag-good' };
+  document.getElementById('card-icon').textContent = scenario.icon;
+  document.getElementById('card-title').textContent = scenario.title;
+  document.getElementById('card-desc').textContent = scenario.desc;
+  const tag = document.getElementById('card-tag');
+  tag.textContent = scenario.tagLabel;
+  tag.className = 'tag-' + scenario.tag;
+  document.getElementById('card-wrap').classList.remove('hidden');
+}
+function hideCard() { document.getElementById('card-wrap').classList.add('hidden'); }
+
+function showToast(icon, title, msg) {
+  document.getElementById('toast-icon').textContent = icon;
+  document.getElementById('toast-title').textContent = title;
+  document.getElementById('toast-msg').textContent = msg;
+  document.getElementById('toast').classList.add('show');
+}
+function hideToast() { document.getElementById('toast').classList.remove('show'); }
+
+function showCombo(c, mult) {
+  if (c < 2) { document.getElementById('combo-wrap').classList.remove('show'); return; }
+  document.getElementById('combo-text').textContent = `🔥 COMBO ×${mult.toFixed(2).replace('.00', '')}`;
+  document.getElementById('combo-wrap').classList.add('show');
+  setTimeout(() => document.getElementById('combo-wrap').classList.remove('show'), 1800);
+}
+
+function updateTimerArc() {
+  const arc = document.getElementById('timer-arc');
+  const txt = document.getElementById('timer-txt');
+  const pct = timeLeft / 90;
+  const circ = 163.4;
+  arc.setAttribute('stroke-dashoffset', circ * (1 - pct));
+  arc.setAttribute('stroke', timeLeft > 30 ? '#fff' : timeLeft > 15 ? '#ffd60a' : '#ff453a');
+  txt.textContent = timeLeft;
+}
+
+function spawnParticles(color) {
+  const cx = window.innerWidth / 2;
+  const cy = window.innerHeight / 2;
+  for (let i = 0; i < 12; i++) {
+    const el = document.createElement('div');
+    el.className = 'particle';
+    const size = 4 + Math.random() * 8;
+    el.style.cssText = `
+      width:${size}px;height:${size}px;
+      background:${color};
+      left:${cx}px;top:${cy}px;
+      --dx:${(Math.random() - 0.5) * 200}px;
+      --dy:${(Math.random() - 0.5) * 200}px;
+      animation-duration:${0.6 + Math.random() * 0.4}s;
+      animation-delay:${Math.random() * 0.1}s;
+    `;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 1200);
+  }
+}
+
+// spawn glowing orb in 3D when scenario appears
+function spawnScenarioOrb(scenario) {
+  const colors = { danger: 0xff453a, warn: 0xffd60a, info: 0x0a84ff, good: 0x30d158 };
+  const color = colors[scenario.tag] || 0xffffff;
+  const geo = new THREE.SphereGeometry(0.5, 16, 16);
+  const mat = new THREE.MeshStandardMaterial({
+    color: color, emissive: color, emissiveIntensity: 1, roughness: 0.1, metalness: 0.3
+  });
+  const orb = new THREE.Mesh(geo, mat);
+  orb.position.set((Math.random() - 0.5) * 4, 5 + Math.random() * 2, (Math.random() - 0.5) * 4);
+  scene.add(orb);
+  let t = 0;
+  const anim = setInterval(() => {
+    t += 0.04;
+    orb.position.y -= 0.06;
+    orb.scale.setScalar(1 - t * 0.3);
+    mat.emissiveIntensity = 1 - t;
+    if (t >= 1) { scene.remove(orb); clearInterval(anim); }
+  }, 16);
+}
+
+// ═══════════════════════════════════════════════════════
+//  RENDER LOOP
+// ═══════════════════════════════════════════════════════
+const clock = new THREE.Clock();
+let cameraAngle = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+
+  // orbs float & orbit slowly
+  orbs.forEach(orb => {
+    orb.userData.orbitAngle += orb.userData.orbitSpeed * 0.005;
+    orb.position.x = Math.cos(orb.userData.orbitAngle) * orb.userData.orbitR;
+    orb.position.z = Math.sin(orb.userData.orbitAngle) * orb.userData.orbitR - 2;
+    orb.position.y = orb.userData.baseY + Math.sin(t * orb.userData.speed + orb.userData.phase) * 0.5;
+    orb.rotation.y += 0.01;
+  });
+
+  // gentle camera drift
+  cameraAngle += 0.0008;
+  camera.position.x = Math.sin(cameraAngle) * 3;
+  camera.position.z = 22 + Math.cos(cameraAngle * 0.7) * 2;
+  camera.lookAt(0, 2, 0);
+
+  // scale bobble
+  if (window.scaleGroup) {
+    window.scaleGroup.rotation.y = Math.sin(t * 0.3) * 0.05;
+    window.scaleGroup.position.y = Math.sin(t * 0.6) * 0.08;
+  }
+
+  // stream particles
+  updateStreamGeo();
+
+  renderer.render(scene, camera);
+}
+animate();
+
+// ── RESIZE ──
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// keyboard shortcuts
+window.addEventListener('keydown', e => {
+  if (gameState !== 'playing') return;
+  if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') decide('free');
+  if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') decide('regulate');
+});
+</script>
+</body>
+</html>
